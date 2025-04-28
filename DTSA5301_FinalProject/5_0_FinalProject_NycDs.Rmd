@@ -1,0 +1,299 @@
+---
+title: "NYPD Shooting Incident Data Project"
+author: "EJDirenzo"
+date: "2025-04-28"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# Import libraries (dependencies)
+
+```{r libraries, message=FALSE}
+library( tidyverse )
+library( lubridate )
+```
+
+# Data 
+
+## Description
+
+The dataset used in this project was provided by the City of New York to the data.gov online catalog.<br>
+
+* Catalog url: https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic
+* Download url: https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD
+
+Title: NYPD Shooting Incident Data (Historic)   
+Updated: April 19, 2025   
+Description from data.gov:    
+
+>List of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year ... 
+>This is a breakdown of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year. This data is manually extracted every quarter and reviewed by the Office of Management Analysis and Planning before being posted on the NYPD website. Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, information related to suspect and victim demographics is also included. This data can be used by the public to explore the nature of shooting/criminal activity.
+
+## Download
+
+```{r get_data, message=FALSE}
+# set url
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+# import
+shoot <- read_csv( url )
+# check
+shoot
+```
+
+## Tidy and transform
+
+I have chosen to drop some columns:
+
+* INCIDENT_KEY: administrative information not useful for this work
+* LOC_OF_OCCUR_DESC: a lot of missing data, and what is present doesn't seem particularly useful
+* JURISDICTION_CODE: administrative information not useful for this work, especially compared to other location data present
+* LOC_CLASSFCTN_DESC: a lot of missing data, and what is present doesn't seem particularly useful
+* LOCATION_DESC: a lot of missing data, and what is present doesn't seem particularly useful
+* STATISTICAL_MURDER_FLAG: I could not find the footnotes on data.gov so I can't be sure exactly what this means
+* X_COORD_CD: too precise to be useful for this work
+* Y_COORD_CD: too precise to be useful for this work
+* Latitude: too precise to be useful for this work
+* Longitude: too precise to be useful for this work
+* Lon_Lat: data type not useful for this work
+
+The rest of the columns seemed valuable and were kept.<br>
+The last operation was to typecast the date values to date objects. The other columns are okay in their given formats.
+```{r tidy_data}
+# drop INCIDENT_KEY
+# keep OCCUR_DATE, OCCUR_TIME
+# keep BORO maybe useful
+# drop LOC_OF_OCCUR_DESC probably not useful
+# keep PRECINCT maybe
+# drop JURISDICTION_CODE 
+# drop LOC_CLASSFCTN_DESC, LOCATION_DESC not
+# drop STATISTICAL_MURDER_FLAG 
+# keep PERP_AGE_GROUP, PERP_SEX, PERP_RACE
+# keep VIC_AGE_GROUP, VIC_SEX, VIC_RACE
+# drop X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat
+tidy <- shoot %>% select( 
+  OCCUR_DATE,
+  OCCUR_TIME,
+  BORO,
+  PRECINCT,
+  # STATISTICAL_MURDER_FLAG,
+  PERP_AGE_GROUP,
+  PERP_SEX,
+  PERP_RACE,
+  VIC_AGE_GROUP,
+  VIC_SEX,
+  VIC_RACE
+  ) %>% mutate( OCCUR_DATE = mdy( OCCUR_DATE ) )
+# check
+tidy
+```
+## Missing data
+
+There is missing data only under the PERP keys, which I think indicates shootings where the perpetrator is unknown (unsolved crimes).
+There is obviously no way to fill this data, but what data is known could be useful, and even the fact that some data is not known might be instructive if there seems to be a pattern in what crimes are solved vs unsolved. So, I have decided to keep these variables.
+
+# Analysis
+
+## Time
+
+### By year
+```{r by_year}
+byYear <- tidy %>%
+  mutate( year=year(OCCUR_DATE) ) %>%
+  group_by( year ) %>%
+  summarize( count=n() )
+#
+byYear
+```
+This is a good time to check the dates.
+```{r check_dates}
+summary( tidy$OCCUR_DATE )
+```
+The dates are as advertised.
+
+### By hour of the day
+```{r by_hour}
+byHour <- tidy %>%
+  mutate( hour=hour(OCCUR_TIME) ) %>%
+  group_by( hour ) %>%
+  summarize( count=n() )
+#
+byHour
+```
+
+## Location
+
+### By borough
+```{r by_boro}
+byBoro <- tidy %>% 
+  group_by( BORO ) %>%
+  summarize( count=n() )
+#
+byBoro
+```
+Brooklyn and the Bronx have, by far, the greatest shooting incidents in the dataset. We don't have population data to make a pure comparison, but a quick Google search shows that the population of Brooklyn is very close to that of Queens, and the Bronx is similar to Manhattan. So this suggests the typical relationship between poverty and elevated crime.
+\bigskip
+
+### By precinct
+```{r by_precinct}
+byPrecinct <- tidy %>% 
+  group_by( PRECINCT ) %>%
+  summarize( count=n() )
+#
+byPrecinct
+```
+## Demographics
+
+### By perpetrator age
+```{r by_perp_age}
+byPerpAge <- tidy %>% 
+  group_by( PERP_AGE_GROUP ) %>%
+  summarize( count=n() )
+#
+byPerpAge
+```
+Here we see there are some potential bad data rows, with age groups which seem to be incorrectly formatted. It isn't readily apparent how to correct the rows, because a few can be interpreted in slightly different ways which would put them into different categories. It does seem clear that the categories 18-24, 25-44, 45-64, and 65+ are correct. It also seems likely that the value (null) is correct because of the large amount of data classified as such, but I am unable to find the data footnotes promised online so I can only speculate that these are shootings commited by minors. But speculation isn't reliable, so we have to ignore the value (null).
+\bigskip
+
+### By perpetrator sex
+```{r by_perp_sex}
+byPerpSex <- tidy %>% 
+  group_by( PERP_SEX ) %>%
+  summarize( count=n() )
+#
+byPerpSex
+```
+
+### By perpetrator race
+```{r by_perp_race}
+byPerpRace <- tidy %>% 
+  group_by( PERP_RACE ) %>%
+  summarize( count=n() )
+#
+byPerpRace
+```
+
+### By victim age
+```{r by_vic_age}
+byVicAge <- tidy %>% 
+  group_by( VIC_AGE_GROUP ) %>%
+  summarize( count=n() )
+#
+byVicAge
+```
+There is only one potential bad data row this time. And this time minors have an obvious classification: <18.
+\bigskip
+
+### By victim sex
+```{r by_vic_sex}
+byVicSex <- tidy %>% 
+  group_by( VIC_SEX ) %>%
+  summarize( count=n() )
+#
+byVicSex
+```
+
+### By victim race
+```{r by_vic_race}
+byVicRace <- tidy %>% 
+  group_by( VIC_RACE ) %>%
+  summarize( count=n() )
+#
+byVicRace
+```
+
+# Visualization
+
+## By year, timeseries
+
+A timeseries is the first and simplest idea for analysis and visualization, but it's always first for a reason.
+
+```{r visualize_by_year}
+byYear %>%
+  ggplot( aes( x=year, y=count ) ) +
+  geom_line( color="black" ) +
+  geom_point( color="black" ) +
+  scale_x_continuous( breaks=byYear$year ) +
+  scale_y_continuous( breaks=seq(900,2100,100) ) +
+  theme( axis.text.x=element_text( angle=45, hjust=1 ) ) +
+  labs( 
+    title="New York City shooting incidents by year", 
+    x="Year", 
+    y="Incidents" 
+    )
+```
+The plot actually does immediately invoke a question: what happened in 2019-2020? It is clear that shootings in New York are on a steady down trend, hitting a low in 2018, then suddenly they spike, doubling back to the levels of 2006. And in only a few years, the numbers have dropped back down almost a sharply. I don't think that addressing this question thoroughly is within the scope of this project, but if it were then I would definitely look for a link to the COVID-19 pandemic. Mass layoffs and unemployment led to a surge of crime in much of the nation, as many desperate people felt they were left with few other options to provide for themselves and their families.
+\bigskip
+
+## By hour of the day
+
+The next visualization that I want to do it shootings by hour of the day. Again, maybe a little obvious but worth doing.
+
+```{r visualize_by_hour}
+byHour %>%
+  ggplot( aes( x=hour, y=count ) ) +
+  geom_point( color="black" ) +
+  geom_line( color="black" ) +
+  scale_x_continuous( breaks=byHour$hour ) +
+  scale_y_continuous( breaks=seq(200,2600,200) ) +
+  theme( axis.text.x=element_text( angle=0, hjust=0.5 ) ) +
+  labs( 
+    title="New York City shooting incidents by hour of the day", 
+    x="Hour", 
+    y="Incidents" 
+    )
+```
+The pattern is not very suprising. Shootings seem to peak around midnight and are at their lowest rate in the early morning. I'll try to do my model on this, it looks cubic.
+
+### Modeling incidents by hour of the day
+
+```{r model_by_hour}
+# cubic model
+mod <- lm( count ~ hour + I(hour^2) + I(hour^3), data=byHour )
+# check summary
+#summary( mod )
+# add to new df
+byHourWPred <- byHour %>% mutate( pred=predict(mod) )
+# check
+byHourWPred
+
+# visualize
+byHourWPred %>% ggplot() +
+  geom_point( aes(x=hour, y=count, color="Data" ) ) +
+  geom_line( aes(x=hour, y=count, color="Data" ) ) +
+  geom_line( aes(x=hour, y=pred, color="Model") ) +
+  scale_color_manual( values=c("Data"="black","Model"="blue") ) +
+  scale_x_continuous( breaks=byHour$hour ) +
+  scale_y_continuous( breaks=seq(200,2600,200) ) +
+  theme( 
+    legend.position="bottom",
+    axis.text.x = element_text( angle=0, hjust=0.5 ) ) +
+  labs( 
+    title="New York City shooting incidents by hour of the day, with model", 
+    x="Hour", 
+    y="Incidents" 
+    )
+```
+The cubic model appears to fit the data well. We can output details to support this observation:
+
+```{r model_eval}
+# check summary
+summary( mod )
+```
+\bigskip
+
+# Conclusion and bias discussion
+
+The data shows a significant and sudden increase in shootings around 2019-2020 and a clear seasonality in shootings based on time of day. 
+
+## Bias and bias mitigation
+
+I already demonstrated some bias by speculating that the reason for the spike in shootings in 2019-2020 was likely a result of pandemic related poverty. I feel that this is not a bad hypothesis but we would need a lot more and different data to truly investigate that. 
+
+Another area in which I am biased concerns questions of perpetrator and victim demographics. Outside of superficial data exploration, I completely ignored them. These are areas of extreme controversy which many have strong opinions about. In my opinion, there are logical and well evidenced arguments concerning systemic bias affecting every aspect related to these incidents, from the underlying causes of the crimes to enforcement of the law and eventually reporting. This dataset is itself likely biased for those reasons, and we do not have enough data here for me to begin to make any kind of reasonable analysis using that part of the dataset. So, I chose to mitigate my bias on this topic by simply avoiding it and focusing elsewhere. 
+
+# Session info
+
+```{r session}
+sessionInfo()
+```
